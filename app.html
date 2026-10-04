@@ -76,7 +76,7 @@ h2{font-size:16px;margin:20px 0 4px;color:#6ee7b7}.note{background:#12281f;borde
   if (typeof module !== 'undefined' && module.exports) module.exports = api; else root.UrlWhy = api;
 })(typeof window !== 'undefined' ? window : this);
 
-var P={'Phishing @':'https://accounts.google.com@evil.example/login','IPv4 tricks':'http://0x7f.1:80/','Backslashes':'http:\\\\example.com\\a\\b','Default port + case':'HTTP://EXAMPLE.com:80/A/../b?x=1#top','Unicode host':'https://b\u00fccher.de/stra\u00dfe','No scheme':'example.com/path?q=1','Invalid':'http://exa mple.com/'};
+var P={'Phishing @':'https://accounts.google.com@evil.example/login','IPv4 tricks':'http://0x7f.1:80/','Backslashes':'http:\\\\example.com\\a\\b','Default port + case':'HTTP://EXAMPLE.com:80/A/../b?x=1#top','Unicode host':'https://b\u00fccher.de/stra\u00dfe','No scheme':'example.com/path?q=1','Invalid':'http://[::1/'};
 function esc(s){return String(s).replace(/[&<>"]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]})}
 function v(x){return x===undefined?'<span class="dim">(absent)</span>':x===''?'<span class="dim">(empty)</span>':'<code>'+esc(x)+'</code>'}
 var inp=document.getElementById('in'),out=document.getElementById('out');
