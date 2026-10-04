@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>UrlWhy app - how browsers really parse a URL</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;background:#0a1712;color:#e4f6ee;line-height:1.5}
+.wrap{max-width:860px;margin:0 auto;padding:28px 16px 50px}
+h1{font-size:28px}h1 span{color:#34d399}.sub{color:#8fbfae;margin:6px 0 14px}
+input{width:100%;background:#12281f;color:#e4f6ee;border:1px solid #28523f;border-radius:10px;padding:11px;font:15px ui-monospace,Menlo,Consolas,monospace}
+label{display:block;font-size:13px;color:#8fbfae;margin:12px 0 4px}
+.pre button{background:#15301f;color:#a7f3d0;border:1px solid #28523f;border-radius:20px;padding:6px 12px;margin:0 6px 6px 0;cursor:pointer;font-size:13px}
+table{width:100%;border-collapse:collapse;margin-top:10px;font-size:14px}th,td{text-align:left;padding:7px 8px;border-bottom:1px solid #1b3a2d;vertical-align:top;word-break:break-all}th{color:#8fbfae;font-weight:600;width:130px}
+code{font-family:ui-monospace,Menlo,Consolas,monospace;color:#a7f3d0}.err{color:#fca5a5}.dim{color:#6f9a88;font-size:12px}
+h2{font-size:16px;margin:20px 0 4px;color:#6ee7b7}.note{background:#12281f;border-left:3px solid #34d399;padding:8px 12px;margin:8px 0;border-radius:6px;font-size:14px}.foot{color:#6f9a88;font-size:13px;margin-top:18px}a{color:#34d399}
+</style></head><body><div class="wrap">
+<h1>Url<span>Why</span></h1>
+<div class="sub">Paste a URL. See how a browser (WHATWG) parses it, how a plain RFC 3986 split reads it, and every silent rewrite in between.</div>
+<div class="pre" id="pre"></div>
+<label for="in">URL</label><input id="in" type="text" spellcheck="false" autocomplete="off">
+<div id="out"></div>
+<div class="foot">The browser view comes from this browser's own URL parser (same algorithm as Node and the WHATWG URL standard). The RFC view is the Appendix B regex of RFC 3986. Explanations only cover the rewrites listed; an empty list does not prove nothing changed. Runs in your browser; nothing is uploaded.</div>
+<div class="foot">Part of the <a href="https://ilanis-agent.github.io/app-factory/">app factory</a>. Source: <a href="https://github.com/iLanis-agent/urlwhy">GitHub</a>.</div>
+</div>
+<script>
+(function (root) {
+  'use strict';
+  // Two views of one string: the RFC 3986 Appendix B split, and what a WHATWG URL parser (browsers, Node) makes of it.
+  var RFC = /^(([^:\/?#]+):)?(\/\/([^\/?#]*))?([^?#]*)(\?([^#]*))?(#(.*))?/;
+  var NOSCHEME = /^(\/\/([^\/?#]*))?([^?#]*)(\?([^#]*))?(#(.*))?/;
+  function rfcSplit(s) {
+    var m = RFC.exec(s);
+    if (m[2] !== undefined && !/^[a-zA-Z][a-zA-Z0-9+.-]*$/.test(m[2])) {
+      // RFC 3986 section 3.1: not a valid scheme, so there is no scheme at all
+      var k = NOSCHEME.exec(s);
+      return { scheme: undefined, authority: k[2], path: k[3], query: k[5], fragment: k[7] };
+    }
+    return { scheme: m[2], authority: m[4], path: m[5], query: m[7], fragment: m[9] };
+  }
+  var DEFAULT = { 'http:': '80', 'https:': '443', 'ftp:': '21', 'ws:': '80', 'wss:': '443' };
+  function notes(raw, u) {
+    var n = [], t = raw.trim();
+    if (/^[\u0000-\u0020]|[\u0000-\u0020]$/.test(raw)) n.push('Leading and trailing spaces and control characters are stripped before parsing.');
+    if (/[\t\n\r]/.test(t)) n.push('Tabs and newlines inside the string are removed silently, even in the middle of the host.');
+    var after = t.replace(/[\t\n\r]/g, '');
+    if (/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(after) && DEFAULT[u.protocol] !== undefined || /^(file|http|https|ftp|ws|wss):/i.test(after)) {
+      if (/\\/.test(after.split(/[?#]/)[0])) n.push('Backslashes count as forward slashes in special schemes (http, https, ftp, ws, wss, file).');
+      if (/^[a-zA-Z]+:(?!\/\/)/.test(after) && /^(http|https|ftp|ws|wss):/i.test(after)) n.push('Slashes after "' + u.protocol + '" are optional for special schemes: "' + u.protocol + 'example.com" parses as a host.');
+    }
+    var m = /^[a-zA-Z][a-zA-Z0-9+.-]*:(?:[\/\\]{2,})?([^\/\\?#]*)/.exec(after);
+    var auth = m ? m[1] : '';
+    if (auth.indexOf('@') >= 0 && DEFAULT[u.protocol] !== undefined) n.push('Everything before the last @ in the authority is credentials, so the real host is "' + u.host + '". A trick used in phishing links.');
+    var hostRaw = auth.slice(auth.lastIndexOf('@') + 1).replace(/:[0-9]*$/, '');
+    if (u.hostname && hostRaw && hostRaw.toLowerCase() !== u.hostname && /[A-Z]/.test(hostRaw) && /^[A-Za-z0-9.-]+$/.test(hostRaw)) n.push('Host lowercased.');
+    if (/[^\x00-\x7f]/.test(hostRaw) && /^xn--|\.xn--|^[a-z0-9.-]*xn--/.test(u.hostname)) n.push('Non-ASCII host converted to Punycode: ' + u.hostname + '.');
+    if (/^(?:0x[0-9a-f]+|[0-9]+)(?:\.(?:0x[0-9a-f]+|[0-9]+)){0,3}$/i.test(hostRaw) && /^[0-9.]+$/.test(u.hostname) && hostRaw !== u.hostname) n.push('Number-like host rewritten as IPv4 (hex, octal-looking, and short forms count): "' + hostRaw + '" became ' + u.hostname + '.');
+    var pm = /:([0-9]+)$/.exec(auth.slice(auth.lastIndexOf('@') + 1));
+    if (pm && DEFAULT[u.protocol] === pm[1] && u.port === '') n.push('Default port :' + pm[1] + ' for ' + u.protocol + ' dropped.');
+    if (/%[0-9a-fA-F]{2}/.test(after) === false && u.pathname !== after.replace(/^[a-zA-Z][a-zA-Z0-9+.-]*:(?:[\/\\]{2})?[^\/\\?#]*/, '').split(/[?#]/)[0] && /\/\.\.?(\/|$)/.test(u.pathname) === false && /\/\.\.?(\/|$)/.test(after.split(/[?#]/)[0])) n.push('Dot segments (. and ..) resolved in the path.');
+    if (/ /.test(after.split(/[?#]/)[0]) && /%20/.test(u.pathname)) n.push('Space in the path percent-encoded as %20.');
+    if (u.protocol === 'javascript:' || u.protocol === 'data:') n.push('Scheme ' + u.protocol + ' runs or embeds content, not a network location.');
+    return n;
+  }
+  function analyze(input) {
+    var raw = String(input), rfc = rfcSplit(raw.trim()), u = null, err = '', base = false;
+    try { u = new URL(raw); } catch (e) {
+      err = 'Invalid URL (no base)';
+      try { u = new URL(raw, 'https://base.example/dir/page'); base = true; } catch (e2) { u = null; }
+    }
+    if (!u) return { raw: raw, ok: false, error: 'The URL parser rejects this string even against a base.', rfc: rfc, notes: [] };
+    var out = { raw: raw, ok: !base, relative: base, rfc: rfc, href: u.href, parts: { protocol: u.protocol, username: u.username, password: u.password, hostname: u.hostname, port: u.port, pathname: u.pathname, search: u.search, hash: u.hash, origin: u.origin } };
+    out.notes = base ? ['No scheme, so this is only a relative reference. new URL(x) throws; against the base https://base.example/dir/page it becomes ' + u.href] : notes(raw, u);
+    if (base) out.error = err;
+    return out;
+  }
+  var api = { analyze: analyze, rfcSplit: rfcSplit };
+  if (typeof module !== 'undefined' && module.exports) module.exports = api; else root.UrlWhy = api;
+})(typeof window !== 'undefined' ? window : this);
+
+var P={'Phishing @':'https://accounts.google.com@evil.example/login','IPv4 tricks':'http://0x7f.1:80/','Backslashes':'http:\\\\example.com\\a\\b','Default port + case':'HTTP://EXAMPLE.com:80/A/../b?x=1#top','Unicode host':'https://b\u00fccher.de/stra\u00dfe','No scheme':'example.com/path?q=1','Invalid':'http://exa mple.com/'};
+function esc(s){return String(s).replace(/[&<>"]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]})}
+function v(x){return x===undefined?'<span class="dim">(absent)</span>':x===''?'<span class="dim">(empty)</span>':'<code>'+esc(x)+'</code>'}
+var inp=document.getElementById('in'),out=document.getElementById('out');
+function run(){var s=inp.value;if(!s){out.innerHTML='';return}var a=UrlWhy.analyze(s),h='';
+ if(!a.ok&&!a.relative)h+='<div class="note err">'+esc(a.error)+'</div>';
+ if(a.relative)h+='<div class="note">'+esc(a.notes[0])+'</div>';
+ var r=a.rfc;h+='<h2>RFC 3986 split</h2><table><tr><th>scheme</th><td>'+v(r.scheme)+'</td></tr><tr><th>authority</th><td>'+v(r.authority)+'</td></tr><tr><th>path</th><td>'+v(r.path)+'</td></tr><tr><th>query</th><td>'+v(r.query)+'</td></tr><tr><th>fragment</th><td>'+v(r.fragment)+'</td></tr></table>';
+ if(a.parts){var p=a.parts;h+='<h2>Browser (WHATWG)</h2><table><tr><th>href</th><td>'+v(a.href)+'</td></tr>';['protocol','username','password','hostname','port','pathname','search','hash','origin'].forEach(function(k){h+='<tr><th>'+k+'</th><td>'+v(p[k])+'</td></tr>'});h+='</table>'}
+ if(a.ok&&a.notes.length){h+='<h2>What changed, and why</h2>';a.notes.forEach(function(n){h+='<div class="note">'+esc(n)+'</div>'})}
+ out.innerHTML=h}
+inp.addEventListener('input',run);
+var pre=document.getElementById('pre');Object.keys(P).forEach(function(k){var b=document.createElement('button');b.textContent=k;b.onclick=function(){inp.value=P[k];run()};pre.appendChild(b)});
+inp.value=P['Phishing @'];run();
+</script></body></html>
